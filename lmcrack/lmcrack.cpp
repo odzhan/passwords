@@ -49,6 +49,9 @@
 #ifndef _MSC_VER
 #include <sys/time.h>
 #else
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <malloc.h>
 
@@ -88,6 +91,10 @@ typedef struct {
     char                  start_pwd[256], end_pwd[256];
     int                   alpha_len, thread_cnt;
     char                  alphabet[128];
+    DES_key_schedule       *ks_tbl_full;
+    DES_key_schedule       *ks_tbl_alpha;
+    DES_key_schedule       *ks_pairs;
+    size_t                ks_pairs_len;
     hash_t                hash;
 } crack_opt_t;
 
@@ -120,6 +127,11 @@ class cracker {
     struct timespec          ts_start, ts_end;
     crack_opt_t              *c;
     hash_t                   hash;
+    std::vector<DES_key_schedule> ks_tbl_full;
+    std::vector<DES_key_schedule> ks_tbl_alpha;
+    std::vector<DES_key_schedule> ks_pairs;
+    std::string              ks_tbl_alpha_key;
+    size_t                   ks_pairs_alpha_len;
     
     // convert string to integer
     uint64_t pwd2cbn(std::string pwd) {
@@ -187,9 +199,10 @@ class cracker {
   public:
     cracker() {
         found      = false;
-        cpu_cnt    = std::thread::hardware_concurrency();
+        cpu_cnt    = std::max(1u, std::thread::hardware_concurrency());
         thread_cnt = cpu_cnt;
         c          = NULL;
+        ks_pairs_alpha_len = 0;
     }
     
     ~cracker(){
@@ -226,7 +239,10 @@ class cracker {
       std::string s, std::string s_pwd, std::string e_pwd) 
     {
         // we don't want thread count to exceed number of cpu available
-        thread_cnt = (thd_cnt!=0 && thd_cnt<cpu_cnt) ? thd_cnt : thread_cnt;
+        if (thd_cnt != 0) {
+          thread_cnt = std::min(thd_cnt, cpu_cnt);
+        }
+        if (thread_cnt == 0) thread_cnt = 1;
         start_pwd  = s_pwd;
         end_pwd    = e_pwd;
         
@@ -235,11 +251,19 @@ class cracker {
         
         // initialize alphabet
         std::transform(s.begin(), s.end(), s.begin(),
-          [](uint8_t c) -> uint8_t {return toupper(c);});
+          [](uint8_t c) -> uint8_t {return (uint8_t)toupper(c);});
         std::sort(s.begin(),s.end());
         s.erase(std::unique(s.begin(),s.end()),s.end());
         // use default if none provided
         alphabet = s.empty() ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ" : s;
+        if (alphabet.length() >= sizeof(((crack_opt_t*)0)->alphabet)) {
+          return false;
+        }
+
+        std::transform(start_pwd.begin(), start_pwd.end(), start_pwd.begin(),
+          [](uint8_t c) -> uint8_t {return (uint8_t)toupper(c);});
+        std::transform(end_pwd.begin(), end_pwd.end(), end_pwd.begin(),
+          [](uint8_t c) -> uint8_t {return (uint8_t)toupper(c);});
         
         // if no start password, set to first character in alphabet
         if(start_pwd.empty() || start_pwd.length() > MAX_PWD) {
@@ -274,11 +298,18 @@ class cracker {
        
         // ensure thread_cnt doesn't exceed total_cbn
         if (total_cbn < 10000) thread_cnt=1;
+
+        // alphabet changed; invalidate cached tables
+        ks_tbl_alpha.clear();
+        ks_pairs.clear();
+        ks_tbl_alpha_key.clear();
+        ks_pairs_alpha_len = 0;
       
         return true;
     }
     
     void get_options(crack_opt_t *opts) {
+        size_t len;
         memset((void*)opts, 0, sizeof(crack_opt_t));
         
         opts->start_cbn  = start_cbn;
@@ -287,9 +318,17 @@ class cracker {
         opts->thread_cbn = (total_cbn/thread_cnt);
         opts->thread_cnt = thread_cnt;
         
-        alphabet.copy(opts->alphabet, 128, 0);
-        start_pwd.copy(opts->start_pwd, MAX_PWD, 0);
-        end_pwd.copy(opts->end_pwd, MAX_PWD, 0);
+        len = std::min(alphabet.size(), sizeof(opts->alphabet) - 1);
+        memcpy(opts->alphabet, alphabet.data(), len);
+        opts->alphabet[len] = '\0';
+
+        len = std::min(start_pwd.size(), sizeof(opts->start_pwd) - 1);
+        memcpy(opts->start_pwd, start_pwd.data(), len);
+        opts->start_pwd[len] = '\0';
+
+        len = std::min(end_pwd.size(), sizeof(opts->end_pwd) - 1);
+        memcpy(opts->end_pwd, end_pwd.data(), len);
+        opts->end_pwd[len] = '\0';
     }
 
     bool get_stats(crack_stats_t *s) {
@@ -300,7 +339,7 @@ class cracker {
         memset(s, 0, sizeof(crack_stats_t));
         
         for (i=0; i<threads.size(); i++) {
-          x += c[i].complete;
+          x += c[i].complete.load(std::memory_order_relaxed);
         }
         
         clock_gettime(CLOCK_MONOTONIC, &ts_end);
@@ -348,10 +387,57 @@ class cracker {
         cv.notify_all();
     }
     
+    void prepare_tables(crack_routine_t func) {
+        if ((func == crack_lm2 || func == crack_lm3 || func == crack_lm4) &&
+            ks_tbl_full.empty()) {
+          ks_tbl_full.resize(7 * 256);
+          DES_init_keys(reinterpret_cast<DES_key_schedule (*)[256]>(
+              ks_tbl_full.data()));
+        }
+
+        if (func == crack_lm3 || func == crack_lm4) {
+          if (ks_tbl_alpha.empty() || ks_tbl_alpha_key != alphabet) {
+            ks_tbl_alpha.resize(7 * 256);
+            DES_init_keys2(const_cast<char*>(alphabet.c_str()),
+              reinterpret_cast<DES_key_schedule (*)[256]>(
+                ks_tbl_alpha.data()));
+            ks_tbl_alpha_key = alphabet;
+          }
+        }
+
+        if (func == crack_lm4) {
+          size_t alpha_len = alphabet.length();
+          size_t pairs_len = alpha_len * alpha_len;
+          if (alpha_len != 0 &&
+              (ks_pairs.size() != pairs_len ||
+               ks_pairs_alpha_len != alpha_len)) {
+            DES_cblock key;
+            uint8_t    pwd[MAX_PWD];
+            size_t     i, j;
+
+            ks_pairs.resize(pairs_len);
+            ks_pairs_alpha_len = alpha_len;
+
+            DES_key_schedule *p = ks_pairs.data();
+            for (i = 0; i < alpha_len; i++) {
+              memset(pwd, 0, sizeof(pwd));
+              pwd[0] = (uint8_t)alphabet[i];
+              for (j = 0; j < alpha_len; j++) {
+                pwd[1] = (uint8_t)alphabet[j];
+                DES_str_to_key(pwd, (uint8_t*)&key);
+                DES_set_key(&key, p);
+                p++;
+              }
+            }
+          }
+        }
+    }
+
     // distribute jobs to each CPU
     void start(crack_routine_t func) {
         uint64_t cbn = start_cbn;
         uint64_t thd_cbn = (total_cbn / thread_cnt);
+        size_t   alpha_len = alphabet.length();
         
         threads.clear();
         
@@ -365,8 +451,18 @@ class cracker {
         }
         thread_run = 0;
         found = false;
+
+        prepare_tables(func);
         
-        c = (crack_opt_t*)aligned_alloc(32, thread_cnt*sizeof(crack_opt_t));
+        {
+          size_t alloc_size = thread_cnt * sizeof(crack_opt_t);
+          size_t aligned_size = (alloc_size + 31) & ~(size_t)31;
+          c = (crack_opt_t*)aligned_alloc(32, aligned_size);
+          if (c == NULL) {
+            fprintf(stderr, "  [ allocation failed\n");
+            return;
+          }
+        }
 
         // for each available cpu
         for (size_t i=0; i<thread_cnt; i++) {
@@ -376,10 +472,17 @@ class cracker {
           // set cracking routine
           c[i].crack = func;
           // set alphabet
-          c[i].alpha_len = alphabet.length();
-          alphabet.copy(c[i].alphabet, 128, 0);
+          c[i].alpha_len = (int)alpha_len;
+          memset(c[i].alphabet, 0, sizeof(c[i].alphabet));
+          memcpy(c[i].alphabet, alphabet.data(),
+            std::min(alpha_len, sizeof(c[i].alphabet) - 1));
           // set hash
           memcpy(c[i].hash.b, hash.b, HASH_BIN_LEN);
+          // set shared tables
+          c[i].ks_tbl_full = ks_tbl_full.empty() ? NULL : ks_tbl_full.data();
+          c[i].ks_tbl_alpha = ks_tbl_alpha.empty() ? NULL : ks_tbl_alpha.data();
+          c[i].ks_pairs = ks_pairs.empty() ? NULL : ks_pairs.data();
+          c[i].ks_pairs_len = ks_pairs.size();
           // set the first combination
           c[i].start_cbn = cbn;
           c[i].pwd_len = cbn2idx(c[i].pwd_idx, cbn);
@@ -463,6 +566,7 @@ void usage(void) {
     printf("       -s <start>     start password\n");
     printf("       -e <end>       end password\n");
     printf("       -t <threads>   number of threads\n\n");
+    printf("       -v1|-v2|-v3|-v4 select cracking version\n\n");
     exit(1);
 }
 
@@ -488,6 +592,7 @@ int main(int argc, char *argv[]) {
     bool            found=false;
     std::string     alphabet, start_pwd, end_pwd, hash, pwd;
     int             thread_cnt=0;
+    uint32_t        version_mask=0;
     
     // need at least a hash
     if(argc<2) {
@@ -513,6 +618,15 @@ int main(int argc, char *argv[]) {
           // number of threads
           case 't':
             thread_cnt = atoi(getparam (argc, argv, &i));
+            break;
+          case 'v':
+          case 'V':
+            if (argv[i][2] >= '1' && argv[i][2] <= '4' && argv[i][3] == 0) {
+              version_mask |= (1u << (argv[i][2] - '1'));
+            } else {
+              printf("  [ invalid version selector %s\n", argv[i]);
+              usage();
+            }
             break;
           case 'h':
           case '?':
@@ -552,6 +666,9 @@ int main(int argc, char *argv[]) {
     #define CNT 4
     
     for(size_t i=0;i<CNT;i++) {
+      if (version_mask != 0 && ((version_mask & (1u << i)) == 0)) {
+        continue;
+      }
       found=false;
       printf("  [ version %zu\n", (i+1));
       c.start(lm[i]);

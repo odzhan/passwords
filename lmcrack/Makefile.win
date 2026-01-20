@@ -1,8 +1,12 @@
 lmcrack:
 	cl -nologo -EHsc -Oy -Ot -O2 lmcrack.cpp
 sse:
-	cl -nologo -EHsc -DSSE2 -Oy -Ot -O2 lmcrack.cpp
+	cl -nologo -EHsc -DSSE2 -Oy -Ot -O2 /arch:SSE2 lmcrack.cpp
+sse2: sse
 avx:
-	cl -nologo -EHsc -DAVX2 -Oy -Ot -O2 lmcrack.cpp
+	cl -nologo -EHsc -DAVX2 -Oy -Ot -O2 /arch:AVX2 lmcrack.cpp
+avx2: avx
+avx512:
+	cl -nologo -EHsc -DAVX512 -Oy -Ot -O2 /arch:AVX512 lmcrack.cpp
 clean:
 	del lmcrack.obj lmcrack.exe lmcrack

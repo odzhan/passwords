@@ -33,11 +33,17 @@ static bool crack_lm2(void *param) {
     uint8_t          pwd[7+1]={0};
     const char       ptext[]="KGS!@#$%";
     uint8_t          ctext[8];
-    DES_key_schedule ks_tbl[7][256];
+    DES_key_schedule (*ks_tbl)[256] = NULL;
+    std::vector<DES_key_schedule> ks_tbl_local;
     crack_opt_t      *c=(crack_opt_t*)param;
     
-    // precompute key schedules
-    DES_init_keys(ks_tbl);
+    if (c->ks_tbl_full != NULL) {
+      ks_tbl = (DES_key_schedule (*)[256])c->ks_tbl_full;
+    } else {
+      ks_tbl_local.resize(7 * 256);
+      ks_tbl = (DES_key_schedule (*)[256])ks_tbl_local.data();
+      DES_init_keys(ks_tbl);
+    }
     
     // create password from index values
     for(i=0;i<7;i++) {
@@ -54,7 +60,7 @@ static bool crack_lm2(void *param) {
         (DES_cblock*)ctext, &ks, DES_ENCRYPT);
       
       // increase how many passwords processed
-      c->complete++;
+      c->complete.fetch_add(1, std::memory_order_relaxed);
       
       // if hashes match, set found and exit loop
       if(memcmp(ctext, c->hash.b, 8)==0) {
@@ -62,7 +68,9 @@ static bool crack_lm2(void *param) {
         return true;
       }
       // decrease total tried. if none left, exit
-      if(--c->total_cbn == 0) return false;
+      if (c->total_cbn.fetch_sub(1, std::memory_order_relaxed) == 1) {
+        return false;
+      }
       // update password index values
       for(i=0;;i++) {
         // increase one. if not length of alphabet, break.

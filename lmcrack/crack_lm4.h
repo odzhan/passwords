@@ -51,74 +51,182 @@
             
 // create DES subkeys using precomputed schedules
 // using AVX2 is slightly faster than SSE2, but not by much.
-#if defined(AVX)
+#if defined(AVX512) || defined(__AVX512F__)
 #include <immintrin.h>
 
 #define DES_SET_KEY(idx) { \
-    __m256i *s = (__m256i*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
-    __m256i *p = (__m256i*)&ks1[idx]; \
-    __m256i *d = (__m256i*)&ks1[idx-1]; \
-    if(idx==7) { \
-      for(int i=0;i<4;i++) d[i] = s[i]; \
+    __m512i *d = (__m512i*)&ks1[idx-1]; \
+    if (c->pwd_idx[idx-1] < 0) { \
+      if (idx == 7) { \
+        for (int i = 0; i < 2; i++) { \
+          _mm512_storeu_si512(&d[i], _mm512_setzero_si512()); \
+        } \
+      } else { \
+        __m512i *p = (__m512i*)&ks1[idx]; \
+        for (int i = 0; i < 2; i++) { \
+          _mm512_storeu_si512(&d[i], _mm512_loadu_si512(&p[i])); \
+        } \
+      } \
     } else { \
-      for(int i=0;i<4;i++) d[i] = _mm256_or_si256(p[i], s[i]); \
+      __m512i *s = (__m512i*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
+      if (idx == 7) { \
+        for (int i = 0; i < 2; i++) { \
+          _mm512_storeu_si512(&d[i], _mm512_loadu_si512(&s[i])); \
+        } \
+      } else { \
+        __m512i *p = (__m512i*)&ks1[idx]; \
+        for (int i = 0; i < 2; i++) { \
+          __m512i pv = _mm512_loadu_si512(&p[i]); \
+          __m512i sv = _mm512_loadu_si512(&s[i]); \
+          _mm512_storeu_si512(&d[i], _mm512_or_si512(pv, sv)); \
+        } \
+      } \
     } \
 }
-#elif defined(SSE)
+#elif defined(AVX2) || defined(__AVX2__) || defined(AVX)
+#include <immintrin.h>
+
+#define DES_SET_KEY(idx) { \
+    __m256i *d = (__m256i*)&ks1[idx-1]; \
+    if (c->pwd_idx[idx-1] < 0) { \
+      if (idx == 7) { \
+        for (int i = 0; i < 4; i++) { \
+          _mm256_storeu_si256(&d[i], _mm256_setzero_si256()); \
+        } \
+      } else { \
+        __m256i *p = (__m256i*)&ks1[idx]; \
+        for (int i = 0; i < 4; i++) { \
+          _mm256_storeu_si256(&d[i], _mm256_loadu_si256(&p[i])); \
+        } \
+      } \
+    } else { \
+      __m256i *s = (__m256i*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
+      if (idx == 7) { \
+        for (int i = 0; i < 4; i++) { \
+          _mm256_storeu_si256(&d[i], _mm256_loadu_si256(&s[i])); \
+        } \
+      } else { \
+        __m256i *p = (__m256i*)&ks1[idx]; \
+        for (int i = 0; i < 4; i++) { \
+          __m256i pv = _mm256_loadu_si256(&p[i]); \
+          __m256i sv = _mm256_loadu_si256(&s[i]); \
+          _mm256_storeu_si256(&d[i], _mm256_or_si256(pv, sv)); \
+        } \
+      } \
+    } \
+}
+#elif defined(SSE2) || defined(__SSE2__) || defined(SSE)
 #include <emmintrin.h>
 
 #define DES_SET_KEY(idx) { \
-    __m128i *s = (__m128i*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
-    __m128i *p = (__m128i*)&ks1[idx]; \
     __m128i *d = (__m128i*)&ks1[idx-1]; \
-    if(idx==7) { \
-      for(int i=0;i<8;i++) d[i] = s[i]; \
+    if (c->pwd_idx[idx-1] < 0) { \
+      if (idx == 7) { \
+        for (int i = 0; i < 8; i++) { \
+          _mm_storeu_si128(&d[i], _mm_setzero_si128()); \
+        } \
+      } else { \
+        __m128i *p = (__m128i*)&ks1[idx]; \
+        for (int i = 0; i < 8; i++) { \
+          _mm_storeu_si128(&d[i], _mm_loadu_si128(&p[i])); \
+        } \
+      } \
     } else { \
-      for(int i=0;i<8;i++) d[i] = _mm_or_si128(p[i], s[i]); \
+      __m128i *s = (__m128i*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
+      if (idx == 7) { \
+        for (int i = 0; i < 8; i++) { \
+          _mm_storeu_si128(&d[i], _mm_loadu_si128(&s[i])); \
+        } \
+      } else { \
+        __m128i *p = (__m128i*)&ks1[idx]; \
+        for (int i = 0; i < 8; i++) { \
+          __m128i pv = _mm_loadu_si128(&p[i]); \
+          __m128i sv = _mm_loadu_si128(&s[i]); \
+          _mm_storeu_si128(&d[i], _mm_or_si128(pv, sv)); \
+        } \
+      } \
     } \
 }
 #else
 #define DES_SET_KEY(idx) { \
-    uint32_t *s = (uint32_t*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
-    uint32_t *p = (uint32_t*)&ks1[idx]; \
     uint32_t *d = (uint32_t*)&ks1[idx-1]; \
-    if(idx==7) { \
-      for(int i=0;i<32;i++) d[i] = s[i]; \
+    if (c->pwd_idx[idx-1] < 0) { \
+      if (idx == 7) { \
+        for (int i = 0; i < 32; i++) d[i] = 0; \
+      } else { \
+        uint32_t *p = (uint32_t*)&ks1[idx]; \
+        for (int i = 0; i < 32; i++) d[i] = p[i]; \
+      } \
     } else { \
-      for(int i=0;i<32;i++) d[i] = p[i] | s[i]; \
+      uint32_t *s = (uint32_t*)&ks_tbl[idx-1][c->pwd_idx[idx-1]]; \
+      if (idx == 7) { \
+        for (int i = 0; i < 32; i++) d[i] = s[i]; \
+      } else { \
+        uint32_t *p = (uint32_t*)&ks1[idx]; \
+        for (int i = 0; i < 32; i++) d[i] = p[i] | s[i]; \
+      } \
     } \
 }
 #endif
 
 static bool crack_lm4(void *param) {
     uint32_t         h[2], l, r, t, u, *k1, *k2;
-    DES_key_schedule ks_tbl[MAX_PWD][256];
+    DES_key_schedule (*ks_tbl)[256] = NULL;
+    std::vector<DES_key_schedule> ks_tbl_local;
     DES_key_schedule ks1[MAX_PWD];
-    DES_key_schedule ks2[69*69];
+    DES_key_schedule *ks2_tbl = NULL;
+    std::vector<DES_key_schedule> ks2_local;
     uint8_t          pwd[MAX_PWD];
     crack_opt_t      *c=(crack_opt_t*)param;
     DES_key_schedule *p;
     DES_cblock       key;
-    int              i, j, cbn;
+    size_t           i, j;
+    size_t           alpha_len;
+    size_t           pair_count, start_offset, pair_base;
+    uint64_t         cbn;
     
-    cbn = c->alpha_len;
-       
-    // create key schedules for alphabet
-    DES_init_keys2(c->alphabet, ks_tbl);
+    alpha_len = (size_t)c->alpha_len;
+
+    if (c->pwd_idx[1] < 0) {
+      return crack_lm3(param);
+    }
+
+    if (c->ks_tbl_alpha != NULL) {
+      ks_tbl = (DES_key_schedule (*)[256])c->ks_tbl_alpha;
+    } else {
+      ks_tbl_local.resize(7 * 256);
+      ks_tbl = (DES_key_schedule (*)[256])ks_tbl_local.data();
+      DES_init_keys2(c->alphabet, ks_tbl);
+    }
     
-    p=&ks2[0];
-    
-    // create key schedules for every two character password
-    for(i=0;i<c->alpha_len;i++) {
-      memset(pwd, 0, sizeof(pwd));
-      pwd[0] = c->alphabet[i];
-      for(j=0;j<c->alpha_len;j++) {
-        pwd[1] = c->alphabet[j];
-        DES_str_to_key(pwd, (uint8_t*)&key);
-        DES_set_key(&key, p);
-        p++;
+    if (alpha_len == 0) return false;
+
+    pair_count = alpha_len * alpha_len;
+    if (c->ks_pairs != NULL && c->ks_pairs_len >= pair_count) {
+      ks2_tbl = c->ks_pairs;
+    } else {
+      ks2_local.resize(pair_count);
+      ks2_tbl = ks2_local.data();
+      p = ks2_tbl;
+      // create key schedules for every two character password
+      for (i = 0; i < alpha_len; i++) {
+        memset(pwd, 0, sizeof(pwd));
+        pwd[0] = (uint8_t)c->alphabet[i];
+        for (j = 0; j < alpha_len; j++) {
+          pwd[1] = (uint8_t)c->alphabet[j];
+          DES_str_to_key(pwd, (uint8_t*)&key);
+          DES_set_key(&key, p);
+          p++;
+        }
       }
     }
+
+    if (c->pwd_idx[0] < 0 || c->pwd_idx[1] < 0) return false;
+    start_offset = ((size_t)c->pwd_idx[0] * alpha_len) + (size_t)c->pwd_idx[1];
+    if (start_offset >= pair_count) return false;
+
+    memset(ks1, 0, sizeof(ks1));
+
     // perform initial permutation on ciphertext/hash
     h[0] = c->hash.w[0];
     h[1] = c->hash.w[1];
@@ -135,10 +243,10 @@ static bool crack_lm4(void *param) {
     }
 
     k1 = (uint32_t*)&ks1[2];
-    k2 = (uint32_t*)&ks2[0];
-    
-    k2 += ((c->pwd_idx[0] * c->alpha_len) + c->pwd_idx[1]) * 32;
-    cbn = c->alpha_len * c->alpha_len;
+    k2 = (uint32_t*)ks2_tbl;
+    k2 += start_offset * 32;
+    pair_base = start_offset;
+    cbn = (uint64_t)(pair_count - start_offset);
     
     goto compute_lm;
 
@@ -152,7 +260,9 @@ static bool crack_lm4(void *param) {
             DES_SET_KEY(4);
             do {
               DES_SET_KEY(3);
-              k2 = (uint32_t*)&ks2[0];
+              k2 = (uint32_t*)ks2_tbl;
+              pair_base = 0;
+              cbn = (uint64_t)pair_count;
 compute_lm:
               for(i=0;i<cbn;i++) {
                 // permuted plaintext
@@ -172,17 +282,21 @@ compute_lm:
                   DES_F(r, l, 30);
                   if (h[1] == r) {
                     // yay, we found it.
-                    c->pwd_idx[0] = (i / c->alpha_len);
-                    c->pwd_idx[1] = (i % c->alpha_len);
+                    size_t pair_idx = pair_base + i;
+                    c->pwd_idx[0] = (int)(pair_idx / alpha_len);
+                    c->pwd_idx[1] = (int)(pair_idx % alpha_len);
                     c->found = true;
                     return true;
                   }
                 }
                 k2+=32;
               }
-              c->complete += cbn;
-              c->total_cbn -= cbn;
-              if ((int64_t)c->total_cbn<0) return false;
+              c->complete.fetch_add(cbn, std::memory_order_relaxed);
+              {
+                uint64_t remaining = c->total_cbn.fetch_sub(
+                  cbn, std::memory_order_relaxed);
+                if (remaining <= cbn) return false;
+              }
               if (c->stopped) return false;
                 
             } while (++c->pwd_idx[2] < c->alpha_len);

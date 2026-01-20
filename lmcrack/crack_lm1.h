@@ -53,7 +53,7 @@ static bool crack_lm1(void *param) {
         (DES_cblock*)ctext, &ks, DES_ENCRYPT);
       
       // increase how many passwords processed
-      c->complete++;
+      c->complete.fetch_add(1, std::memory_order_relaxed);
       
       // if hashes match, set found and exit loop
       if(memcmp(ctext, c->hash.b, 8)==0) {
@@ -61,7 +61,7 @@ static bool crack_lm1(void *param) {
         return true;
       }
       // decrease total tried. if none left, exit
-      if(--c->total_cbn == 0) {
+      if (c->total_cbn.fetch_sub(1, std::memory_order_relaxed) == 1) {
         return false;
       }
       // update password index values
