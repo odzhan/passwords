@@ -63,7 +63,7 @@ static void print_progress(uint64_t tested,uint64_t total,double elapsed,
 #if !defined(_WIN32) && !defined(_WIN64)
     std::cout<<"\33[2K";
 #endif
-    std::cout<<"\r  [ "<<std::fixed<<std::setprecision(2)
+    std::cout<<"\r [ "<<std::fixed<<std::setprecision(2)
              <<(rate/1000000.0)<<"M k/s "
              <<(unsigned int)(percent>100.0?100.0:percent)
              <<"% complete. ETA: "<<format_duration(eta);
