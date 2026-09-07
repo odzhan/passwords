@@ -303,7 +303,7 @@ void DES_pair64_init(void)
 
 #define IP(l,r) \
 	{ \
-	register DES_LONG tt; \
+	DES_LONG tt; \
 	PERM_OP(r,l,tt, 4,0x0f0f0f0fL); \
 	PERM_OP(l,r,tt,16,0x0000ffffL); \
 	PERM_OP(r,l,tt, 2,0x33333333L); \
@@ -313,7 +313,7 @@ void DES_pair64_init(void)
 
 #define FP(l,r) \
 	{ \
-	register DES_LONG tt; \
+	DES_LONG tt; \
 	PERM_OP(l,r,tt, 1,0x55555555L); \
 	PERM_OP(r,l,tt, 8,0x00ff00ffL); \
 	PERM_OP(l,r,tt, 2,0x33333333L); \
@@ -473,14 +473,14 @@ static const DES_LONG des_skb[8][64]={
 
 void DES_encrypt1(DES_LONG *data, DES_key_schedule *ks, int enc)
 {
-    register DES_LONG l, r, t, u;
+    DES_LONG l, r, t, u;
 #ifdef DES_PTR
-    register const unsigned char *des_SP = (const unsigned char *)DES_SPtrans;
+    const unsigned char *des_SP = (const unsigned char *)DES_SPtrans;
 #endif
 #ifndef DES_UNROLL
-    register int i;
+    int i;
 #endif
-    register DES_LONG *s;
+    DES_LONG *s;
 
     r = data[0];
     l = data[1];
@@ -566,7 +566,7 @@ void DES_encrypt1(DES_LONG *data, DES_key_schedule *ks, int enc)
 void DES_ecb_encrypt(const_DES_cblock *input, DES_cblock *output,
                      DES_key_schedule *ks, int enc)
 {
-    register DES_LONG l;
+    DES_LONG l;
     DES_LONG ll[2];
     const unsigned char *in = &(*input)[0];
     unsigned char *out = &(*output)[0];
@@ -586,10 +586,10 @@ void DES_ecb_encrypt(const_DES_cblock *input, DES_cblock *output,
 void DES_set_key(DES_cblock *key, DES_key_schedule *schedule)
 	{
 	static int shifts2[16]={0,0,1,1,1,1,1,1,0,1,1,1,1,1,1,0};
-	register DES_LONG c,d,t,s,t2;
-	register unsigned char *in;
-	register DES_LONG *k;
-	register int i;
+	DES_LONG c,d,t,s,t2;
+	unsigned char *in;
+	DES_LONG *k;
+	int i;
 
 	k=(DES_LONG *)schedule;
 	in=(unsigned char *)key;
