@@ -581,7 +581,7 @@ void usage(void) {
     printf("       -v7  general SIMD bitsliced DES; supports custom alphabets\n");
     printf("       -v8  specialized SIMD bitsliced DES; A-Z alphabet only\n");
     printf("       -v9  specialized SIMD bitsliced DES; 0-9/A-Z alphabet only\n");
-    printf("       -v11 specialized SIMD bitsliced DES; printable LM alphabet\n\n");
+    printf("       -v11 specialized SIMD bitsliced DES; 0-9/A-Z/space/punctuation\n\n");
     exit(1);
 }
 

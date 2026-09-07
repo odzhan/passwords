@@ -11,8 +11,9 @@ Use it only on hashes and systems you are authorized to test.
 - `src/bitslice/v7`, `v8`, `v9`, and `v11` contain version-specific workers and
   candidate generation.
 - `src/destool` contains the standalone known-plaintext DES key-search tool.
-- `tests/bitslice`, `tests/destool`, `tests/v8`, and `tests/v9` contain unit and differential
-  tests; `tests/integration` contains command-line tests.
+- `tests/bitslice`, `tests/destool`, `tests/v8`, `tests/v9`, and `tests/v11`
+  contain unit and differential tests; `tests/integration` contains
+  command-line tests.
 - `tools` contains profiling and benchmarking programs.
 - `cmake` contains reusable SIMD and test-target configuration.
 
@@ -100,6 +101,9 @@ converts it to uppercase. Shell-sensitive range characters should be quoted:
 build-avx2\lmcrack 695109AB020E401C -v11 -s '!' -e '!' -t 1
 ```
 
+See [the v11 mode documentation](docs/LMCRACK_V11.md) for the complete frozen
+alphabet contract, candidate ordering, key-space sizes, and validation status.
+
 For an arbitrary custom alphabet, use the general v7 bitslice implementation.
 Quote alphabets containing shell metacharacters:
 
@@ -121,6 +125,9 @@ for the selected alphabet and supported password lengths. Run
 - `-v11` is specialized for the 69-character printable LM alphabet: digits,
   uppercase letters, space, and ASCII punctuation. Its exact frozen order is
   shown above.
+
+Version 10 is currently unassigned; the existing v8 and v9 meanings were kept
+stable for command-line compatibility.
 
 The command-line parser uppercases, sorts, and deduplicates custom alphabets.
 Consequently, v9 always uses digits-first base-36 order, regardless of the

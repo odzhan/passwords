@@ -394,3 +394,15 @@ lmcrack behavior and performance unchanged.
   - Run the complete Release suite with scalar, native SIMD runtime tests, and
     cross-platform compile checks.
   - Record final validation results in this checklist.
+
+## Subsequent lmcrack v11 extension
+
+- Added lmcrack v11 without changing the existing v8 or v9 command-line
+  contracts. V10 remains unassigned.
+- V11 freezes a 69-character printable LM alphabet in digits, uppercase,
+  space, then punctuation order. The complete contract and key-space sizes are
+  documented in `docs/LMCRACK_V11.md`.
+- Added a radix-69 bitsliced counter, direct printable-ASCII key-plane mapping,
+  schedule-free worker, CLI selection, and scalar/SSE2/AVX2 tests.
+- The complete AVX2 Release suite passes 97/97 tests. V11's AVX-512 sources
+  compile successfully, and its NEON tests are registered for ARM64 execution.
