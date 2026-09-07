@@ -26,6 +26,7 @@ target_include_directories(lmcrack_internal INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/src/bitslice/v7"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/bitslice/v8"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/bitslice/v9"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/bitslice/v11"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/destool")
 
 add_executable(lmcrack src/lmcrack.cpp)
@@ -79,6 +80,10 @@ if(BUILD_TESTING)
   add_test(NAME v9_cli_differential
     COMMAND ${CMAKE_COMMAND} -DLMCRACK_EXE=$<TARGET_FILE:lmcrack>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/v9_cli_differential.cmake)
+  add_test(NAME v11_cli
+    COMMAND lmcrack 695109AB020E401C -v11 -s ! -e ! -t 1)
+  set_tests_properties(v11_cli PROPERTIES
+    PASS_REGULAR_EXPRESSION "found password : !")
   add_test(NAME destool_cli_integration
     COMMAND ${CMAKE_COMMAND} -DDESTOOL_EXE=$<TARGET_FILE:destool>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/destool_cli.cmake)
@@ -93,6 +98,9 @@ if(BUILD_TESTING)
   lmcrack_add_cpp_test(v9_generator_diff_test v9_generator_diff_test.cpp)
   lmcrack_add_cpp_test(fixed_bitslice_des_test fixed_bitslice_des_test.cpp)
   lmcrack_add_cpp_test(v9_worker_test v9_worker_test.cpp)
+  lmcrack_add_cpp_test(v11_printable_test v11_printable_test.cpp)
+  lmcrack_add_cpp_test(v11_generator_test v11_generator_test.cpp)
+  lmcrack_add_cpp_test(v11_worker_test v11_worker_test.cpp)
   lmcrack_add_cpp_test(v8_bitslice_counter_test v8_bitslice_counter_test.cpp)
   lmcrack_add_cpp_test(v8_key_planes_test v8_key_planes_test.cpp)
   lmcrack_add_cpp_test(v8_generator_diff_test v8_generator_diff_test.cpp)
@@ -166,6 +174,10 @@ if(BUILD_TESTING)
     TEST_NAME v9_generator_diff_scalar BACKEND SCALAR)
   lmcrack_add_cpp_test(v9_worker_scalar_test v9_worker_test.cpp
     TEST_NAME v9_worker_scalar BACKEND SCALAR)
+  lmcrack_add_cpp_test(v11_generator_scalar_test v11_generator_test.cpp
+    TEST_NAME v11_generator_scalar BACKEND SCALAR)
+  lmcrack_add_cpp_test(v11_worker_scalar_test v11_worker_test.cpp
+    TEST_NAME v11_worker_scalar BACKEND SCALAR)
   lmcrack_add_cpp_test(v8_target_scalar_test v8_target_test.cpp
     TEST_NAME v8_target_scalar BACKEND SCALAR)
   lmcrack_add_cpp_test(v8_worker_scalar_test v8_worker_test.cpp
@@ -202,6 +214,10 @@ if(BUILD_TESTING)
       v9_generator_diff_test.cpp AVX512)
     lmcrack_add_cpp_compile_test(v9_worker_compile_avx512
       v9_worker_test.cpp AVX512)
+    lmcrack_add_cpp_compile_test(v11_generator_compile_avx512
+      v11_generator_test.cpp AVX512)
+    lmcrack_add_cpp_compile_test(v11_worker_compile_avx512
+      v11_worker_test.cpp AVX512)
     lmcrack_add_cpp_compile_test(v8_generator_diff_compile_avx512
       v8_generator_diff_test.cpp AVX512)
     lmcrack_add_cpp_compile_test(v8_target_compile_avx2
@@ -238,6 +254,10 @@ if(BUILD_TESTING)
       TEST_NAME v9_generator_diff_sse2 BACKEND SSE2)
     lmcrack_add_cpp_test(v9_worker_sse2_test v9_worker_test.cpp
       TEST_NAME v9_worker_sse2 BACKEND SSE2)
+    lmcrack_add_cpp_test(v11_generator_sse2_test v11_generator_test.cpp
+      TEST_NAME v11_generator_sse2 BACKEND SSE2)
+    lmcrack_add_cpp_test(v11_worker_sse2_test v11_worker_test.cpp
+      TEST_NAME v11_worker_sse2 BACKEND SSE2)
     lmcrack_add_cpp_test(v8_target_sse2_test v8_target_test.cpp
       TEST_NAME v8_target_sse2 BACKEND SSE2)
     lmcrack_add_cpp_test(v8_worker_sse2_test v8_worker_test.cpp
@@ -269,6 +289,10 @@ if(BUILD_TESTING)
         TEST_NAME v9_generator_diff_avx2 BACKEND AVX2)
       lmcrack_add_cpp_test(v9_worker_avx2_test v9_worker_test.cpp
         TEST_NAME v9_worker_avx2 BACKEND AVX2)
+      lmcrack_add_cpp_test(v11_generator_avx2_test v11_generator_test.cpp
+        TEST_NAME v11_generator_avx2 BACKEND AVX2)
+      lmcrack_add_cpp_test(v11_worker_avx2_test v11_worker_test.cpp
+        TEST_NAME v11_worker_avx2 BACKEND AVX2)
       lmcrack_add_cpp_test(v8_generator_diff_avx2_test v8_generator_diff_test.cpp
         TEST_NAME v8_generator_diff_avx2 BACKEND AVX2)
       lmcrack_add_cpp_test(v8_target_avx2_test v8_target_test.cpp
@@ -310,6 +334,10 @@ if(BUILD_TESTING)
       TEST_NAME v9_generator_diff_neon BACKEND NEON)
     lmcrack_add_cpp_test(v9_worker_neon_test v9_worker_test.cpp
       TEST_NAME v9_worker_neon BACKEND NEON)
+    lmcrack_add_cpp_test(v11_generator_neon_test v11_generator_test.cpp
+      TEST_NAME v11_generator_neon BACKEND NEON)
+    lmcrack_add_cpp_test(v11_worker_neon_test v11_worker_test.cpp
+      TEST_NAME v11_worker_neon BACKEND NEON)
     lmcrack_add_cpp_test(v8_generator_diff_neon_test v8_generator_diff_test.cpp
       TEST_NAME v8_generator_diff_neon BACKEND NEON)
     lmcrack_add_cpp_test(v8_target_neon_test v8_target_test.cpp
@@ -345,6 +373,7 @@ if(LMCRACK_ENABLE_SANITIZERS)
                    v9_generator_diff_test
                    fixed_bitslice_des_test
                    v9_worker_test
+                   v11_printable_test v11_generator_test v11_worker_test
                    v8_key_planes_test v8_generator_diff_test v8_direct_des_test
                    v8_target_test
                    v8_worker_test

@@ -8,7 +8,7 @@ Use it only on hashes and systems you are authorized to test.
 - `src/legacy` contains the scalar v1 through v6 DES implementations.
 - `src/bitslice/common` contains backend-neutral bitslice primitives and the
   shared fixed-alphabet DES path.
-- `src/bitslice/v7`, `v8`, and `v9` contain version-specific workers and
+- `src/bitslice/v7`, `v8`, `v9`, and `v11` contain version-specific workers and
   candidate generation.
 - `src/destool` contains the standalone known-plaintext DES key-search tool.
 - `tests/bitslice`, `tests/destool`, `tests/v8`, and `tests/v9` contain unit and differential
@@ -86,6 +86,20 @@ automatically selects `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ`:
 build-avx2\lmcrack 1FB363FEB834C12D -v9 -s 0 -e ZZZZZZ -t 14
 ```
 
+Use v11 for every distinct printable ASCII character after LM uppercasing.
+It freezes digits first, uppercase letters second, then space and punctuation:
+
+```text
+0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~
+```
+
+The alphabet contains 69 characters; lowercase is omitted because LM hashing
+converts it to uppercase. Shell-sensitive range characters should be quoted:
+
+```powershell
+build-avx2\lmcrack 695109AB020E401C -v11 -s '!' -e '!' -t 1
+```
+
 For an arbitrary custom alphabet, use the general v7 bitslice implementation.
 Quote alphabets containing shell metacharacters:
 
@@ -104,12 +118,16 @@ for the selected alphabet and supported password lengths. Run
 - `-v8` is specialized for the exact alphabet `ABCDEFGHIJKLMNOPQRSTUVWXYZ`.
 - `-v9` is specialized for the exact alphabet
   `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ` and password lengths 1 through 7.
+- `-v11` is specialized for the 69-character printable LM alphabet: digits,
+  uppercase letters, space, and ASCII punctuation. Its exact frozen order is
+  shown above.
 
 The command-line parser uppercases, sorts, and deduplicates custom alphabets.
 Consequently, v9 always uses digits-first base-36 order, regardless of the
 order supplied to `-c`. Character position zero is the fastest-changing digit.
-If `-v9` is selected without `-c`, the fixed v9 alphabet is selected
-automatically.
+If `-v9` or `-v11` is selected without `-c`, its fixed alphabet is selected
+automatically. V11 preserves its documented category order rather than sorting
+the alphabet.
 
 Use `lmcrack -h` for the complete version descriptions and command-line
 options. The `v9_profile` target is a developer utility that reports the cost

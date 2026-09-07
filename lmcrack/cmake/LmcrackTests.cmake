@@ -6,7 +6,7 @@ function(lmcrack_resolve_test_source output_variable source)
     return()
   endif()
 
-  foreach(test_group bitslice destool v8 v9)
+  foreach(test_group bitslice destool v8 v9 v11)
     set(candidate "${PROJECT_SOURCE_DIR}/tests/${test_group}/${source}")
     if(EXISTS "${candidate}")
       set(${output_variable} "${candidate}" PARENT_SCOPE)

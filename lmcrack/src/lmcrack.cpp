@@ -114,6 +114,7 @@ typedef struct _crack_stats_t {
 #include "crack_lm7.h"
 #include "crack_lm8.h"
 #include "crack_lm9.h"
+#include "crack_lm11.h"
 
 #define MAX_THREADS 32
 
@@ -239,8 +240,9 @@ class cracker {
     }
     
     // initialize the first and last passwords to try
-    bool set_options(uint32_t thd_cnt, std::string h, 
-      std::string s, std::string s_pwd, std::string e_pwd) 
+    bool set_options(uint32_t thd_cnt, std::string h,
+      std::string s, std::string s_pwd, std::string e_pwd,
+      bool preserve_alphabet_order=false)
     {
         // we don't want thread count to exceed number of cpu available
         if (thd_cnt != 0) {
@@ -254,10 +256,12 @@ class cracker {
         if(!set_hash(h, hash.b)) return false;
         
         // initialize alphabet
-        std::transform(s.begin(), s.end(), s.begin(),
-          [](uint8_t c) -> uint8_t {return (uint8_t)toupper(c);});
-        std::sort(s.begin(),s.end());
-        s.erase(std::unique(s.begin(),s.end()),s.end());
+        if (!preserve_alphabet_order) {
+          std::transform(s.begin(), s.end(), s.begin(),
+            [](uint8_t c) -> uint8_t {return (uint8_t)toupper(c);});
+          std::sort(s.begin(),s.end());
+          s.erase(std::unique(s.begin(),s.end()),s.end());
+        }
         // use default if none provided
         alphabet = s.empty() ? "ABCDEFGHIJKLMNOPQRSTUVWXYZ" : s;
         if (alphabet.length() >= sizeof(((crack_opt_t*)0)->alphabet)) {
@@ -392,7 +396,8 @@ class cracker {
     }
     
     void prepare_tables(crack_routine_t func) {
-        if (func == crack_lm7 || func == crack_lm8 || func == crack_lm9) {
+        if (func == crack_lm7 || func == crack_lm8 || func == crack_lm9 ||
+            func == crack_lm11) {
           bs_sbox_init();
           bs_init_lm_plaintext_state();
         }
@@ -575,7 +580,8 @@ void usage(void) {
     printf("       -v6  v4 pair schedules materialized into contiguous batch keys\n");
     printf("       -v7  general SIMD bitsliced DES; supports custom alphabets\n");
     printf("       -v8  specialized SIMD bitsliced DES; A-Z alphabet only\n");
-    printf("       -v9  specialized SIMD bitsliced DES; 0-9/A-Z alphabet only\n\n");
+    printf("       -v9  specialized SIMD bitsliced DES; 0-9/A-Z alphabet only\n");
+    printf("       -v11 specialized SIMD bitsliced DES; printable LM alphabet\n\n");
     exit(1);
 }
 
@@ -602,9 +608,9 @@ int main(int argc, char *argv[]) {
 #endif
     cracker         c;
     crack_opt_t     opts;
-    crack_routine_t lm[9]={crack_lm1,crack_lm2,crack_lm3,
+    crack_routine_t lm[11]={crack_lm1,crack_lm2,crack_lm3,
                            crack_lm4,crack_lm5,crack_lm6,crack_lm7,
-                           crack_lm8,crack_lm9};
+                           crack_lm8,crack_lm9,NULL,crack_lm11};
     bool            found=false;
     std::string     alphabet, start_pwd, end_pwd, hash, pwd;
     int             thread_cnt=0;
@@ -637,11 +643,16 @@ int main(int argc, char *argv[]) {
             break;
           case 'v':
           case 'V':
-            if (argv[i][2] >= '1' && argv[i][2] <= '9' && argv[i][3] == 0) {
-              version_mask |= (1u << (argv[i][2] - '1'));
-            } else {
-              printf("  [ invalid version selector %s\n", argv[i]);
-              usage();
+            {
+              char *end=NULL;
+              long selected=strtol(argv[i]+2,&end,10);
+              if (end!=argv[i]+2 && *end==0 &&
+                  ((selected>=1 && selected<=9) || selected==11)) {
+                version_mask |= (1u << (selected-1));
+              } else {
+                printf("  [ invalid version selector %s\n", argv[i]);
+                usage();
+              }
             }
             break;
           case 'h':
@@ -665,9 +676,11 @@ int main(int argc, char *argv[]) {
     
     /* A specifically requested v9 supplies its fixed alphabet by default. */
     if ((version_mask&(1u<<8))!=0 && alphabet.empty()) alphabet=V9_ALPHABET;
+    if ((version_mask&(1u<<10))!=0 && alphabet.empty()) alphabet=V11_ALPHABET;
 
     // initialize
-    if(!c.set_options(thread_cnt,hash,alphabet,start_pwd,end_pwd)) {
+    if(!c.set_options(thread_cnt,hash,alphabet,start_pwd,end_pwd,
+                      (version_mask&(1u<<10))!=0)) {
       printf("  [ failed to initialize parameters.\n");
       usage();
     }
@@ -677,6 +690,7 @@ int main(int argc, char *argv[]) {
 
     bool v8_compatible=strcmp(opts.alphabet,V8_ALPHABET)==0;
     bool v9_compatible=strcmp(opts.alphabet,V9_ALPHABET)==0;
+    bool v11_compatible=strcmp(opts.alphabet,V11_ALPHABET)==0;
     if ((version_mask&(1u<<7))!=0 && !v8_compatible) {
       fprintf(stderr,"  [ version 8 requires alphabet \"%s\"; got \"%s\"\n",
               V8_ALPHABET,opts.alphabet);
@@ -687,6 +701,10 @@ int main(int argc, char *argv[]) {
               V9_ALPHABET,opts.alphabet);
       return 1;
     }
+    if ((version_mask&(1u<<10))!=0 && !v11_compatible) {
+      fprintf(stderr,"  [ version 11 requires its frozen printable alphabet\n");
+      return 1;
+    }
     
     printf ("  [ start pwd   : \"%s\"\n", opts.start_pwd);
     printf ("  [ end pwd     : \"%s\"\n", opts.end_pwd);
@@ -695,12 +713,13 @@ int main(int argc, char *argv[]) {
     printf ("  [ thread cbn  : %" PRIu64 "\n",   opts.thread_cbn);
     printf ("  [ thread cnt  : %" PRIu32 "\n\n",  opts.thread_cnt);
       
-    #define CNT 9
+    #define CNT 11
     
     for(size_t i=0;i<CNT;i++) {
       if (version_mask != 0 && ((version_mask & (1u << i)) == 0)) {
         continue;
       }
+      if (lm[i]==NULL) continue;
       if (i==7 && !v8_compatible) {
         printf("  [ version 8 skipped: requires alphabet \"%s\"\n\n",
                V8_ALPHABET);
@@ -709,6 +728,10 @@ int main(int argc, char *argv[]) {
       if (i==8 && !v9_compatible) {
         printf("  [ version 9 skipped: requires alphabet \"%s\"\n\n",
                V9_ALPHABET);
+        continue;
+      }
+      if (i==10 && !v11_compatible) {
+        printf("  [ version 11 skipped: requires its frozen printable alphabet\n\n");
         continue;
       }
       found=false;
