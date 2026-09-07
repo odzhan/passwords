@@ -1,15 +1,15 @@
 #ifndef LMCRACK_FIXED_BITSLICE_TARGET_H
 #define LMCRACK_FIXED_BITSLICE_TARGET_H
 
-/* Alphabet-neutral compatibility interface for v8's internal-state matcher. */
-#include "v8_target.h"
+/* Alphabet-neutral compatibility interface retained for v9. */
+#include "bitslice_target.h"
 
-typedef v8_target_state fixed_target_state;
+typedef bs_target_state fixed_target_state;
 
 static inline int fixed_prepare_target_state(const uint8_t target[8],
                                              fixed_target_state *state)
 {
-    return v8_prepare_target_state(target,state);
+    return bs_prepare_target_state(target,state);
 }
 
 #if defined(_MSC_VER)
@@ -24,7 +24,7 @@ static FIXED_TARGET_FORCE_INLINE bs_vec fixed_match_target_state(
     const bs_vec left[32],const bs_vec right[32],
     const fixed_target_state *target,size_t valid_lanes)
 {
-    return v8_match_target_state(left,right,target,valid_lanes);
+    return bs_match_target_state(left,right,target,valid_lanes);
 }
 
 #undef FIXED_TARGET_FORCE_INLINE

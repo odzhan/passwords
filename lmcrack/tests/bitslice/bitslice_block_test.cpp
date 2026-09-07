@@ -11,6 +11,7 @@ static unsigned lane_bit(const bs_vec &plane,size_t lane)
 static int check(const uint8_t block[8])
 {
     bs_vec planes[BS_BLOCK_PLANES],left[32],right[32];
+    bs_block_state prepared;
     if (!bs_broadcast_block(block,planes)) return 1;
     for (size_t plane=0;plane<BS_BLOCK_PLANES;plane++) {
       unsigned expected=(block[plane>>3]>>(7U-(plane&7U)))&1U;
@@ -18,6 +19,14 @@ static int check(const uint8_t block[8])
         if (lane_bit(planes[plane],lane)!=expected) return 2;
     }
     if (!bs_initial_permutation(planes,left,right)) return 3;
+    if (!bs_prepare_plaintext_state(block,&prepared)) return 4;
+    for (unsigned int bit=0;bit<32;bit++) {
+      uint8_t a[BS_BYTES],b[BS_BYTES];
+      bs_store(a,left[bit]);bs_store(b,prepared.left[bit]);
+      if (memcmp(a,b,BS_BYTES)!=0) return 5;
+      bs_store(a,right[bit]);bs_store(b,prepared.right[bit]);
+      if (memcmp(a,b,BS_BYTES)!=0) return 6;
+    }
     for (size_t lane=0;lane<BS_LANES;lane++) {
       uint32_t got_left=0,got_right=0,expected_left=0,expected_right=0;
       for (unsigned bit=0;bit<32;bit++) {
@@ -37,12 +46,19 @@ int main(void)
 {
     const uint8_t zero[8]={0};
     const uint8_t ones[8]={0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
-    const uint8_t pattern[8]={0x80,0x01,0xa5,0x5a,0x12,0x34,0x56,0x78};
+    const uint8_t alternating[8]={0xaa,0x55,0xaa,0x55,0xaa,0x55,0xaa,0x55};
+    const uint8_t standard[8]={0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef};
     const uint8_t lm_plaintext[8]={'K','G','S','!','@','#','$','%'};
     if (check(zero)) return 1;
     if (check(ones)) return 2;
-    if (check(pattern)) return 3;
-    if (check(lm_plaintext)) return 4;
+    if (check(alternating)) return 3;
+    if (check(standard)) return 4;
+    if (check(lm_plaintext)) return 5;
+    {
+      bs_block_state state;
+      if (bs_prepare_plaintext_state(NULL,&state)) return 6;
+      if (bs_prepare_plaintext_state(zero,NULL)) return 7;
+    }
     {
       bs_block_state cached;
       bs_vec input[BS_BLOCK_PLANES],left[32],right[32];

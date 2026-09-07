@@ -6,7 +6,7 @@ function(lmcrack_resolve_test_source output_variable source)
     return()
   endif()
 
-  foreach(test_group bitslice v8 v9)
+  foreach(test_group bitslice destool v8 v9)
     set(candidate "${PROJECT_SOURCE_DIR}/tests/${test_group}/${source}")
     if(EXISTS "${candidate}")
       set(${output_variable} "${candidate}" PARENT_SCOPE)
@@ -24,7 +24,12 @@ function(lmcrack_add_cpp_test target source)
   lmcrack_resolve_test_source(source_path "${source}")
   add_executable(${target} "${source_path}")
   target_compile_features(${target} PRIVATE cxx_std_11)
-  target_link_libraries(${target} PRIVATE lmcrack_internal)
+  target_link_libraries(${target} PRIVATE lmcrack_internal Threads::Threads)
+  # The tests use assert() as their lightweight check mechanism. Keep those
+  # checks active even when the tested implementation is optimized as Release.
+  target_compile_options(${target} PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>)
   if(ARG_BACKEND)
     lmcrack_configure_simd(${target} "${ARG_BACKEND}")
   endif()

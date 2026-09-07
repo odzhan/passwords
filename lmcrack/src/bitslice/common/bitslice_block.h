@@ -89,6 +89,16 @@ typedef struct {
     bs_vec right[32];
 } bs_block_state;
 
+/* Prepare the invariant initial DES state for an arbitrary plaintext block. */
+static inline int bs_prepare_plaintext_state(const uint8_t plaintext[8],
+                                             bs_block_state *state)
+{
+    bs_vec input[BS_BLOCK_PLANES];
+    if (plaintext==NULL || state==NULL ||
+        !bs_broadcast_block(plaintext,input)) return 0;
+    return bs_initial_permutation(input,state->left,state->right);
+}
+
 static bs_block_state bs_lm_plaintext_state;
 static int bs_lm_plaintext_ready=0;
 
@@ -96,11 +106,8 @@ static int bs_lm_plaintext_ready=0;
 static inline void bs_init_lm_plaintext_state(void)
 {
     static const uint8_t plaintext[8]={'K','G','S','!','@','#','$','%'};
-    bs_vec input[BS_BLOCK_PLANES];
-    bs_broadcast_block(plaintext,input);
-    bs_initial_permutation(input,bs_lm_plaintext_state.left,
-                           bs_lm_plaintext_state.right);
-    bs_lm_plaintext_ready=1;
+    bs_lm_plaintext_ready=
+      bs_prepare_plaintext_state(plaintext,&bs_lm_plaintext_state);
 }
 
 static inline int bs_copy_lm_plaintext_state(bs_block_state *state)
