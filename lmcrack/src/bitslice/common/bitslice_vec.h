@@ -66,6 +66,7 @@ static BS_FORCE_INLINE bs_vec bs_load(const void *p) { return _mm_loadu_si128((c
 static BS_FORCE_INLINE void bs_store(void *p, bs_vec a) { _mm_storeu_si128((__m128i*)p,a); }
 #elif defined(LMCRACK_NEON) || defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
+#define BS_BACKEND_NEON 1
 typedef uint8x16_t bs_vec;
 #define BS_LANES 128U
 #define BS_BYTES 16U
@@ -94,7 +95,7 @@ static BS_FORCE_INLINE void bs_store(void *p, bs_vec a) { memcpy(p,&a,sizeof(a))
 /* Select bits from b where mask is set, otherwise from a. */
 static BS_FORCE_INLINE bs_vec bs_select(bs_vec a, bs_vec b, bs_vec mask)
 {
-#if defined(LMCRACK_NEON) || defined(__aarch64__) || defined(_M_ARM64)
+#if defined(BS_BACKEND_NEON)
     return vbslq_u8(mask,b,a);
 #else
     return bs_xor(a,bs_and(bs_xor(a,b),mask));
