@@ -1,0 +1,21 @@
+INCLUDES=/Isrc /Isrc\legacy /Isrc\bitslice\common /Isrc\bitslice\v7 /Isrc\bitslice\v8 /Isrc\bitslice\v9
+SOURCE=src\lmcrack.cpp
+
+lmcrack:
+	cl -nologo $(INCLUDES) -EHsc -Oy -Ot -O2 $(SOURCE)
+sse:
+	cl -nologo $(INCLUDES) -EHsc -DSSE2 -Oy -Ot -O2 /arch:SSE2 $(SOURCE)
+sse2: sse
+avx:
+	cl -nologo $(INCLUDES) -EHsc -DAVX2 -Oy -Ot -O2 /arch:AVX2 $(SOURCE)
+avx2: avx
+avx512:
+	cl -nologo $(INCLUDES) -EHsc -DAVX512 -Oy -Ot -O2 /arch:AVX512 $(SOURCE)
+arm64:
+	cl -nologo $(INCLUDES) -EHsc -DLMCRACK_NEON -O2 -GL $(SOURCE) /link /LTCG
+arm64-pair256:
+	cl -nologo $(INCLUDES) -EHsc -DLMCRACK_NEON -DLMCRACK_PAIR256 -O2 -GL $(SOURCE) /link /LTCG
+arm64-pair64:
+	cl -nologo $(INCLUDES) -EHsc -DLMCRACK_NEON -DLMCRACK_PAIR64 -O2 -GL $(SOURCE) /link /LTCG
+clean:
+	del lmcrack.obj lmcrack.exe lmcrack
