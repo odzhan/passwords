@@ -1,4 +1,10 @@
-/** Two-stream variant of crack_lm4. */
+/** Interleaved scalar variant of crack_lm4; two streams by default. */
+
+#ifndef LMCRACK_V5_STREAMS
+#define LMCRACK_V5_STREAMS 2
+#endif
+static_assert(LMCRACK_V5_STREAMS>=2 && LMCRACK_V5_STREAMS<=4,
+              "v5 supports two, three, or four streams");
 
 #if defined(LMCRACK_PAIR64)
 #define DES_F5(LL,R,S,K,U,T) { \
@@ -114,6 +120,7 @@ static bool crack_lm5(void *param) {
               pair_base = 0;
               cbn = (uint64_t)pair_count;
 compute_lm5:
+#if LMCRACK_V5_STREAMS == 2
               for (i=0; i+1<(size_t)cbn; i+=2) {
                 uint32_t *ka = k2;
                 uint32_t *kb = k2 + 32;
@@ -141,7 +148,37 @@ compute_lm5:
                 if (h[0]==l1) { DES_F5(r1,l1,30,kb,u1,t1); if (h[1]==r1) { j=pair_base+i+1; goto found_lm5; } }
                 k2 += 64;
               }
-              if (i<(size_t)cbn) {
+#else
+              for (i=0;i+LMCRACK_V5_STREAMS<=(size_t)cbn;i+=LMCRACK_V5_STREAMS) {
+                uint32_t left[LMCRACK_V5_STREAMS],right[LMCRACK_V5_STREAMS];
+                for(unsigned stream=0;stream<LMCRACK_V5_STREAMS;stream++) {
+                  left[stream]=0xAA190747; right[stream]=0x2400B807;
+                }
+                // Each round visits every stream before the next round.
+#define LM5_STEP(L,R,S) \
+                for(unsigned stream=0;stream<LMCRACK_V5_STREAMS;stream++) { \
+                  uint32_t u,t; uint32_t *k=k2+stream*32; \
+                  DES_F5(L[stream],R[stream],S,k,u,t); }
+                LM5_STEP(left,right,0); LM5_STEP(right,left,2);
+                LM5_STEP(left,right,4); LM5_STEP(right,left,6);
+                LM5_STEP(left,right,8); LM5_STEP(right,left,10);
+                LM5_STEP(left,right,12); LM5_STEP(right,left,14);
+                LM5_STEP(left,right,16); LM5_STEP(right,left,18);
+                LM5_STEP(left,right,20); LM5_STEP(right,left,22);
+                LM5_STEP(left,right,24); LM5_STEP(right,left,26);
+                LM5_STEP(left,right,28);
+#undef LM5_STEP
+                for(unsigned stream=0;stream<LMCRACK_V5_STREAMS;stream++) {
+                  if(h[0]==left[stream]) {
+                    uint32_t u,t; uint32_t *k=k2+stream*32;
+                    DES_F5(right[stream],left[stream],30,k,u,t);
+                    if(h[1]==right[stream]) { j=pair_base+i+stream; goto found_lm5; }
+                  }
+                }
+                k2+=32*LMCRACK_V5_STREAMS;
+              }
+#endif
+              for (;i<(size_t)cbn;i++) {
                 r0=0x2400B807; l0=0xAA190747;
                 DES_ENCRYPT15_5(l0,r0,k2,u0,t0);
                 if (h[0]==l0) { DES_F5(r0,l0,30,k2,u0,t0); if (h[1]==r0) { j=pair_base+i; goto found_lm5; } }

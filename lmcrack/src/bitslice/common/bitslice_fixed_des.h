@@ -50,15 +50,32 @@ static inline void bs_fixed_des_f(const bs_vec right[32],
       output[bit]=substituted[bs_des_p[bit]-1U];
 }
 
+static const uint8_t bs_fixed_destination_bit[32]={
+  8,16,22,30,12,27,1,17,23,15,29,5,25,19,9,0,
+  7,13,24,2,3,28,10,18,31,11,21,6,4,26,14,20
+};
+
 template <unsigned int Round>
 static inline void bs_fixed_apply_round(bs_vec destination[32],
-                                        const bs_vec source[32],
-                                        const bs_vec password[BS_KEY_PLANES])
+                                       const bs_vec source[32],
+                                       const bs_vec password[BS_KEY_PLANES])
 {
-    bs_vec f[32];
-    bs_fixed_des_f<Round>(source,password,f);
-    for (unsigned int bit=0;bit<32;bit++)
-      destination[bit]=bs_xor(destination[bit],f[bit]);
+    static_assert(Round<BS_DES_ROUNDS,"invalid DES round");
+    bs_vec input[6],sbox_output[4];
+    // Fuse inverse P and Feistel XOR without round-sized temporary arrays.
+    for (unsigned int Box=0;Box<8;Box++) {
+    for (unsigned int bit=0;bit<6;bit++) {
+      const unsigned int expanded=Box*6U+bit;
+      input[bit]=bs_xor(source[bs_des_e[expanded]-1U],
+                        password[bs_fixed_round_key_plane[Round][expanded]]);
+    }
+    bs_sbox_optimized(Box,input,sbox_output);
+    for (unsigned int bit=0;bit<4;bit++) {
+      const unsigned int output=Box*4U+bit;
+      const unsigned int target=bs_fixed_destination_bit[output];
+      destination[target]=bs_xor(destination[target],sbox_output[bit]);
+    }
+    }
 }
 
 /* Explicit calls keep Round constant and expose every key-plane index. */

@@ -14,6 +14,11 @@ option(LMCRACK_NATIVE_CPU "Optimize for the CPU performing the build" OFF)
 option(LMCRACK_ENABLE_LTO "Enable link-time optimization in Release builds" ON)
 option(LMCRACK_ENABLE_PAIR256 "Use the 256 KiB pair-merged DES tables" OFF)
 option(LMCRACK_ENABLE_PAIR64 "Use the dense 64 KiB pair-merged DES tables" OFF)
+set(LMCRACK_V5_STREAMS "2" CACHE STRING "Number of independent scalar v5 encryptions (2, 3, or 4)")
+set_property(CACHE LMCRACK_V5_STREAMS PROPERTY STRINGS 2 3 4)
+if(NOT LMCRACK_V5_STREAMS MATCHES "^[234]$")
+  message(FATAL_ERROR "LMCRACK_V5_STREAMS must be 2, 3, or 4")
+endif()
 option(LMCRACK_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(LMCRACK_TEST_AVX2 "Build and run the AVX2 bitslice differential test" OFF)
 option(LMCRACK_TEST_AVX512 "Build and run the AVX-512 bitslice differential test" OFF)
@@ -30,6 +35,7 @@ target_include_directories(lmcrack_internal INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/src/destool")
 
 add_executable(lmcrack src/lmcrack.cpp)
+target_compile_definitions(lmcrack PRIVATE LMCRACK_V5_STREAMS=${LMCRACK_V5_STREAMS})
 add_executable(lmhash src/lmhash.c)
 add_executable(v9_profile tools/v9_profile.cpp)
 add_executable(destool src/destool/main.cpp)
@@ -52,6 +58,13 @@ target_link_libraries(destool PRIVATE Threads::Threads)
 target_link_libraries(destool_benchmark PRIVATE Threads::Threads)
 
 if(BUILD_TESTING)
+  add_test(NAME scalar_cli_differential
+    COMMAND ${CMAKE_COMMAND} -DLMCRACK_EXE=$<TARGET_FILE:lmcrack>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/scalar_cli_differential.cmake)
+  add_test(NAME v5_streams
+    COMMAND ${CMAKE_COMMAND} -DLMCRACK_EXE=$<TARGET_FILE:lmcrack>
+      -DLMHASH_EXE=$<TARGET_FILE:lmhash>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/v5_streams.cmake)
   add_test(NAME v8_cli
     COMMAND lmcrack 7584248B8D2C9F9E -v8 -s A -e A -t 1)
   set_tests_properties(v8_cli PROPERTIES
@@ -429,7 +442,14 @@ else()
   set(LMCRACK_SELECTED_BACKEND SCALAR)
 endif()
 
-foreach(target lmcrack destool v9_profile destool_profile destool_benchmark)
+add_executable(v7_profile tools/v7_profile.cpp)
+target_compile_features(v7_profile PRIVATE cxx_std_11)
+target_link_libraries(v7_profile PRIVATE lmcrack_internal)
+if(BUILD_TESTING)
+  add_test(NAME v7_profile_smoke COMMAND v7_profile 100)
+endif()
+
+foreach(target lmcrack destool v7_profile v9_profile destool_profile destool_benchmark)
   lmcrack_configure_simd(${target} "${LMCRACK_SELECTED_BACKEND}")
   if(MINGW AND (LMCRACK_SELECTED_BACKEND STREQUAL "AVX2" OR
                 LMCRACK_SELECTED_BACKEND STREQUAL "AVX512"))
@@ -438,3 +458,65 @@ foreach(target lmcrack destool v9_profile destool_profile destool_benchmark)
 endforeach()
 
 message(STATUS "lmcrack/destool bitslice backend: ${LMCRACK_SELECTED_BACKEND}")
+if(BUILD_TESTING)
+  if(LMCRACK_SELECTED_BACKEND STREQUAL "AVX2" OR LMCRACK_SELECTED_BACKEND STREQUAL "AVX512")
+    add_executable(v5x_schedule_test tests/v5x_schedule_test.cpp)
+    target_compile_features(v5x_schedule_test PRIVATE cxx_std_11)
+    target_link_libraries(v5x_schedule_test PRIVATE lmcrack_internal)
+    lmcrack_configure_simd(v5x_schedule_test AVX2)
+    add_test(NAME v5x_schedule COMMAND v5x_schedule_test)
+    add_test(NAME v5x_streams COMMAND ${CMAKE_COMMAND}
+      -DLMCRACK_EXE=$<TARGET_FILE:lmcrack> -DLMHASH_EXE=$<TARGET_FILE:lmhash>
+      -DTEST_VERSION=5x -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/v5_streams.cmake)
+    add_test(NAME v5x_cli_differential COMMAND ${CMAKE_COMMAND}
+      -DLMCRACK_EXE=$<TARGET_FILE:lmcrack> -DTEST_VERSION=5x
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/scalar_cli_differential.cmake)
+  else()
+    add_test(NAME v5x_requires_avx2 COMMAND lmcrack 25AD3B83FA6627C7 -v5x -s 0 -e 0)
+    set_tests_properties(v5x_requires_avx2 PROPERTIES WILL_FAIL TRUE)
+  endif()
+endif()
+
+# Opt-in reference executables for same-toolchain CLI A/B measurements.
+option(LMCRACK_BUILD_COMPARISONS "Enable scalar and bitslice comparison executable targets" OFF)
+if(LMCRACK_BUILD_COMPARISONS)
+  foreach(reference lmcrack_reference_transpose lmcrack_reference_lane lmcrack_scalar_default lmcrack_scalar_pair64 lmcrack_scalar_pair256 lmcrack_scalar_stream3 lmcrack_scalar_stream4)
+    add_executable(${reference} EXCLUDE_FROM_ALL src/lmcrack.cpp)
+    target_compile_features(${reference} PRIVATE cxx_std_11)
+    target_link_libraries(${reference} PRIVATE lmcrack_internal Threads::Threads)
+    foreach(property COMPILE_OPTIONS COMPILE_DEFINITIONS INTERPROCEDURAL_OPTIMIZATION_RELEASE)
+      get_target_property(value lmcrack ${property})
+      if(property STREQUAL "COMPILE_DEFINITIONS" AND reference MATCHES "lmcrack_scalar_")
+        list(REMOVE_ITEM value LMCRACK_PAIR64 LMCRACK_PAIR256)
+        list(FILTER value EXCLUDE REGEX "^LMCRACK_V5_STREAMS=")
+      endif()
+      if(NOT value STREQUAL "value-NOTFOUND")
+        set_property(TARGET ${reference} PROPERTY ${property} "${value}")
+      endif()
+    endforeach()
+    if(reference MATCHES "lmcrack_reference_")
+      target_compile_definitions(${reference} PRIVATE LMCRACK_REFERENCE_LANE_SCAN)
+    endif()
+  endforeach()
+  target_compile_definitions(lmcrack_reference_transpose PRIVATE LMCRACK_REFERENCE_TRANSPOSE)
+  target_compile_definitions(lmcrack_scalar_pair64 PRIVATE LMCRACK_PAIR64)
+  target_compile_definitions(lmcrack_scalar_pair256 PRIVATE LMCRACK_PAIR256)
+  foreach(reference lmcrack_scalar_default lmcrack_scalar_pair64 lmcrack_scalar_pair256)
+    target_compile_definitions(${reference} PRIVATE LMCRACK_V5_STREAMS=2)
+  endforeach()
+  target_compile_definitions(lmcrack_scalar_stream3 PRIVATE LMCRACK_V5_STREAMS=3)
+  target_compile_definitions(lmcrack_scalar_stream4 PRIVATE LMCRACK_V5_STREAMS=4)
+endif()
+if(BUILD_TESTING)
+  lmcrack_add_cpp_test(bitslice_match_scalar_test bitslice_match_test.cpp
+    TEST_NAME bitslice_match_scalar BACKEND SCALAR)
+  if(LMCRACK_X86)
+    lmcrack_add_cpp_test(bitslice_match_sse2_test bitslice_match_test.cpp
+      TEST_NAME bitslice_match_sse2 BACKEND SSE2)
+    if(LMCRACK_ENABLE_AVX2 OR LMCRACK_TEST_AVX2)
+      lmcrack_add_cpp_test(bitslice_match_avx2_test bitslice_match_test.cpp
+        TEST_NAME bitslice_match_avx2 BACKEND AVX2)
+    endif()
+    lmcrack_add_cpp_compile_test(bitslice_match_compile_avx512 bitslice_match_test.cpp AVX512)
+  endif()
+endif()

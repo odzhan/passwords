@@ -12,6 +12,15 @@ static bs_vec make_match(size_t a,size_t b)
 
 int main(void)
 {
+    // Every tail boundary and possible first bit, including invalid tail bits.
+    for(size_t valid=0;valid<=BS_LANES+1;valid++) {
+      if(bs_first_match_lane(bs_zero(),valid)!=BS_LANES)return 12;
+      for(size_t bit=0;bit<BS_LANES;bit++) {
+        bs_vec mask=make_match(bit,BS_LANES-1);
+        if(bs_first_match_lane(mask,valid)!=
+           bs_first_match_lane_reference(mask,valid))return 13;
+      }
+    }
     int initial[BS_MAX_PWD]={1,2,0,0,0,0,0};
     int recovered[BS_MAX_PWD],length;
     bs_candidate_generator gen;bs_candidate_batch batch;

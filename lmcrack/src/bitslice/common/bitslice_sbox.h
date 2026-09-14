@@ -52,8 +52,13 @@ static inline void bs_sbox_reference(unsigned box,const bs_vec input[6],
 #define vnot(dst,a)   ((dst)=bs_not((a)))
 #define vsel(dst,a,b,mask) ((dst)=bs_select((a),(b),(mask)))
 #define vandn(dst,a,b) ((dst)=bs_andnot((a),(b)))
-#if defined(LMCRACK_NEON) || defined(__aarch64__) || defined(_M_ARM64) || \
-    defined(AVX512) || defined(__AVX512F__)
+#if defined(LMCRACK_FORCE_SELECT_SBOX) && defined(LMCRACK_FORCE_STANDARD_SBOX)
+#error "Select only one forced S-box circuit family"
+#endif
+#if defined(LMCRACK_FORCE_SELECT_SBOX) || \
+    (!defined(LMCRACK_FORCE_STANDARD_SBOX) && \
+     (defined(LMCRACK_NEON) || defined(__aarch64__) || defined(_M_ARM64) || \
+      defined(AVX512) || defined(__AVX512F__)))
 #include "bitslice_sboxes_openwall.inc"
 #else
 #define andn 1

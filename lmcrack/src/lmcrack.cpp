@@ -110,6 +110,7 @@ typedef struct _crack_stats_t {
 #include "crack_lm3.h"
 #include "crack_lm4.h"
 #include "crack_lm5.h"
+#include "crack_lm5x.h"
 #include "crack_lm6.h"
 #include "crack_lm7.h"
 #include "crack_lm8.h"
@@ -402,14 +403,14 @@ class cracker {
           bs_init_lm_plaintext_state();
         }
         if ((func == crack_lm2 || func == crack_lm3 || func == crack_lm4 ||
-             func == crack_lm5 || func == crack_lm6) &&
+             func == crack_lm5 || func == crack_lm5x || func == crack_lm6) &&
             ks_tbl_full.empty()) {
           ks_tbl_full.resize(7 * 256);
           DES_init_keys(reinterpret_cast<DES_key_schedule (*)[256]>(
               ks_tbl_full.data()));
         }
 
-        if (func == crack_lm3 || func == crack_lm4 || func == crack_lm5 ||
+        if (func == crack_lm3 || func == crack_lm4 || func == crack_lm5 || func == crack_lm5x ||
             func == crack_lm6) {
           if (ks_tbl_alpha.empty() || ks_tbl_alpha_key != alphabet) {
             ks_tbl_alpha.resize(7 * 256);
@@ -420,7 +421,7 @@ class cracker {
           }
         }
 
-        if (func == crack_lm4 || func == crack_lm5 || func == crack_lm6) {
+        if (func == crack_lm4 || func == crack_lm5 || func == crack_lm5x || func == crack_lm6) {
           size_t alpha_len = alphabet.length();
           size_t pairs_len = alpha_len * alpha_len;
           if (alpha_len != 0 &&
@@ -577,6 +578,7 @@ void usage(void) {
     printf("       -v3  optimized scalar DES with incremental key-schedule updates\n");
     printf("       -v4  scalar DES with precomputed two-character schedule pairs\n");
     printf("       -v5  v4 pair schedules with two independent encryptions in flight\n");
+    printf("       -v5x experimental three-stream scalar DES with AVX2 schedule merging\n");
     printf("       -v6  v4 pair schedules materialized into contiguous batch keys\n");
     printf("       -v7  general SIMD bitsliced DES; supports custom alphabets\n");
     printf("       -v8  specialized SIMD bitsliced DES; A-Z alphabet only\n");
@@ -608,9 +610,9 @@ int main(int argc, char *argv[]) {
 #endif
     cracker         c;
     crack_opt_t     opts;
-    crack_routine_t lm[11]={crack_lm1,crack_lm2,crack_lm3,
+    crack_routine_t lm[12]={crack_lm1,crack_lm2,crack_lm3,
                            crack_lm4,crack_lm5,crack_lm6,crack_lm7,
-                           crack_lm8,crack_lm9,NULL,crack_lm11};
+                           crack_lm8,crack_lm9,NULL,crack_lm11,crack_lm5x};
     bool            found=false;
     std::string     alphabet, start_pwd, end_pwd, hash, pwd;
     int             thread_cnt=0;
@@ -644,6 +646,14 @@ int main(int argc, char *argv[]) {
           case 'v':
           case 'V':
             {
+              if (strcmp(argv[i]+2,"5x")==0) {
+                if (!LMCRACK_V5X_AVAILABLE) {
+                  fprintf(stderr,"v5x requires an AVX2-enabled build\n");
+                  return 1;
+                }
+                version_mask |= (1u<<11);
+                break;
+              }
               char *end=NULL;
               long selected=strtol(argv[i]+2,&end,10);
               if (end!=argv[i]+2 && *end==0 &&
@@ -713,9 +723,10 @@ int main(int argc, char *argv[]) {
     printf ("  [ thread cbn  : %" PRIu64 "\n",   opts.thread_cbn);
     printf ("  [ thread cnt  : %" PRIu32 "\n\n",  opts.thread_cnt);
       
-    #define CNT 11
+    #define CNT 12
     
     for(size_t i=0;i<CNT;i++) {
+      if (i==11 && version_mask==0) continue; // v5x is opt-in.
       if (version_mask != 0 && ((version_mask & (1u << i)) == 0)) {
         continue;
       }
@@ -735,7 +746,8 @@ int main(int argc, char *argv[]) {
         continue;
       }
       found=false;
-      printf("  [ version %zu\n", (i+1));
+      if(i==11) printf("  [ version 5x\n");
+      else printf("  [ version %zu\n", (i+1));
       c.start(lm[i]);
       
       // wait for threads to finish

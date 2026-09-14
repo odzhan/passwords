@@ -71,7 +71,7 @@ static inline size_t bs_candidate_next(bs_candidate_generator *g,
     return count;
 }
 
-static inline size_t bs_first_match_lane(bs_vec match,size_t valid_lanes)
+static inline size_t bs_first_match_lane_reference(bs_vec match,size_t valid_lanes)
 {
     uint8_t packed[BS_BYTES];
     size_t lane;
@@ -80,6 +80,35 @@ static inline size_t bs_first_match_lane(bs_vec match,size_t valid_lanes)
     for (lane=0;lane<valid_lanes;lane++)
       if ((packed[lane>>3]>>(lane&7U))&1U) return lane;
     return (size_t)BS_LANES;
+}
+
+static inline size_t bs_first_match_lane(bs_vec match,size_t valid_lanes)
+{
+#if defined(LMCRACK_REFERENCE_LANE_SCAN)
+    return bs_first_match_lane_reference(match,valid_lanes);
+#else
+    if (valid_lanes==0 || !bs_any(match)) return BS_LANES;
+    if (valid_lanes>BS_LANES) valid_lanes=BS_LANES;
+    uint8_t packed[BS_BYTES];
+    bs_store(packed,match);
+    for (size_t base=0;base<valid_lanes;base+=64) {
+      // Explicit little-endian packing preserves lane order on every backend.
+      uint64_t word=0;
+      for (unsigned byte=0;byte<8;byte++)
+        word|=(uint64_t)packed[base/8+byte]<<(byte*8);
+      if (word!=0) {
+#if defined(__GNUC__) || defined(__clang__)
+        const size_t bit=(size_t)__builtin_ctzll(word);
+#else
+        size_t bit=0;
+        while ((word&1U)==0) { word>>=1; bit++; }
+#endif
+        const size_t lane=base+bit;
+        return lane<valid_lanes?lane:BS_LANES;
+      }
+    }
+    return BS_LANES;
+#endif
 }
 
 static inline int bs_recover_candidate(const bs_candidate_batch *batch,

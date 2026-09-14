@@ -42,6 +42,24 @@ static int run_case(const char *alphabet, unsigned alpha, uint64_t start,
 
 int main(void)
 {
+    // Arbitrary bytes, every length, empty/full/tail batches, and nonuniform lanes.
+    char alphabet[128];
+    for(unsigned i=0;i<128;i++) alphabet[i]=(char)(i*197U);
+    uint32_t seed=12345;
+    for(size_t count=0;count<=BS_LANES;count++) {
+      bs_candidate_batch batch={}; batch.count=count;
+      for(size_t lane=0;lane<count;lane++) {
+        batch.length[lane]=(uint8_t)(lane%8);
+        for(unsigned pos=0;pos<7;pos++) {
+          seed=seed*1664525U+1013904223U;
+          batch.index[lane][pos]=(uint8_t)((seed>>16)&127);
+        }
+      }
+      bs_vec reference[56],actual[56];
+      if(!bs_transpose_passwords_reference(&batch,alphabet,128,reference) ||
+         !bs_transpose_passwords(&batch,alphabet,128,actual)) return 4;
+      if(std::memcmp(reference,actual,sizeof(actual))) return 5;
+    }
     if (run_case("Az9",3,0,BS_LANES+7)) return 1;
     if (run_case("ABCDEFGHIJKLMNOPQRSTUVWXYZ",26,25,BS_LANES-3)) return 2;
     if (run_case("!~",2,2+4+8-1,5)) return 3;
